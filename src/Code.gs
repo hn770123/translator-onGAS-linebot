@@ -195,17 +195,17 @@ function detectLanguage(text) {
  */
 function translateWithContext(message, history, sourceLanguage) {
   try {
-    // ターゲット言語を決定
-    const targetLanguage = determineTargetLanguage(sourceLanguage);
-
     // プロンプト作成
-    const prompt = buildTranslationPrompt(message, history, sourceLanguage, targetLanguage);
+    const prompt = buildTranslationPrompt(message, history, sourceLanguage);
 
     // Gemini APIで翻訳
-    const translation = callGeminiAPI(prompt);
+    const rawTranslation = callGeminiAPI(prompt);
+
+    // 翻訳結果をパースして整形
+    const formattedTranslation = parseTranslationResult(rawTranslation, sourceLanguage);
 
     return {
-      translation: translation,
+      translation: formattedTranslation,
       prompt: prompt
     };
 
@@ -216,54 +216,121 @@ function translateWithContext(message, history, sourceLanguage) {
 }
 
 /**
- * ターゲット言語決定
+ * 翻訳結果をパースして整形
  */
-function determineTargetLanguage(sourceLanguage) {
-  // 日本語 → 英語
-  // 英語 → 日本語
-  // ポーランド語 → 日本語
-  // その他 → 日本語
+function parseTranslationResult(rawTranslation, sourceLanguage) {
+  try {
+    // 各言語の翻訳を抽出
+    const translations = {
+      en: '',
+      pl: '',
+      ja: ''
+    };
 
-  if (sourceLanguage === 'ja') {
-    return 'en';
-  } else {
-    return 'ja';
+    // English:, Polish:, Japanese: の行を探して抽出
+    const lines = rawTranslation.split('\n');
+    let currentLang = null;
+    let currentText = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      if (line.startsWith('English:')) {
+        if (currentLang && currentText.length > 0) {
+          translations[currentLang] = currentText.join('\n').trim();
+        }
+        currentLang = 'en';
+        currentText = [];
+        const content = line.substring('English:'.length).trim();
+        if (content) {
+          currentText.push(content);
+        }
+      } else if (line.startsWith('Polish:')) {
+        if (currentLang && currentText.length > 0) {
+          translations[currentLang] = currentText.join('\n').trim();
+        }
+        currentLang = 'pl';
+        currentText = [];
+        const content = line.substring('Polish:'.length).trim();
+        if (content) {
+          currentText.push(content);
+        }
+      } else if (line.startsWith('Japanese:')) {
+        if (currentLang && currentText.length > 0) {
+          translations[currentLang] = currentText.join('\n').trim();
+        }
+        currentLang = 'ja';
+        currentText = [];
+        const content = line.substring('Japanese:'.length).trim();
+        if (content) {
+          currentText.push(content);
+        }
+      } else if (currentLang && line) {
+        currentText.push(line);
+      }
+    }
+
+    // 最後の言語の翻訳を保存
+    if (currentLang && currentText.length > 0) {
+      translations[currentLang] = currentText.join('\n').trim();
+    }
+
+    // ソース言語以外の2つの言語を整形して返す
+    const languageLabels = {
+      en: 'English',
+      pl: 'Polish',
+      ja: 'Japanese'
+    };
+
+    const targetLanguages = ['en', 'pl', 'ja'].filter(lang => lang !== sourceLanguage);
+    const result = targetLanguages
+      .map(lang => `${languageLabels[lang]}:\n${translations[lang]}`)
+      .join('\n\n');
+
+    return result;
+
+  } catch (error) {
+    Logger.log('Error in parseTranslationResult: ' + error.toString());
+    // パースに失敗した場合は、生の翻訳結果をそのまま返す
+    return rawTranslation;
   }
 }
 
 /**
  * 翻訳プロンプト作成
  */
-function buildTranslationPrompt(message, history, sourceLanguage, targetLanguage) {
-  const languageNames = {
-    'ja': '日本語',
-    'en': '英語',
-    'pl': 'ポーランド語'
-  };
+function buildTranslationPrompt(message, history, sourceLanguage) {
+  let prompt = `[Context / Environment]
+- Situation: Group chat for a children's ballet class.
+- Key Goal: Smooth communication between teachers and parents.
+- Role: An expert cultural mediator and translator.
 
-  let prompt = `あなたは優秀な翻訳アシスタントです。以下のテキストを${languageNames[sourceLanguage]}から${languageNames[targetLanguage]}に翻訳してください。\n\n`;
+[Language Strategy]
+1. English: Use clear, friendly, and practical English. Prioritize being understood by a non-native speaker over complex grammar.
+2. Polish: Use "Pan/Pani" for respect. Mirror the politeness of the source while keeping it natural for a teacher-parent relationship in Poland.
+3. Japanese: Use appropriate "Keigo" (honorifics) that reflects the modest yet respectful tone Japanese parents use with teachers.
+
+[Output Rules]
+- Detect the source language automatically.
+- Provide translations for the other two languages.
+- Skip the original language.
+- Output ONLY the result. No conversational filler.
+`;
 
   // 履歴がある場合は文脈として追加
   if (history && history.length > 0) {
-    prompt += `【会話の文脈】\n`;
-    prompt += `以下は過去のユーザーの発言です。代名詞や省略表現を翻訳する際の参考にしてください。\n\n`;
-
+    prompt += `\n[Conversation History]\n`;
+    prompt += `Here are the recent messages for context (use these to resolve pronouns and understand context):\n`;
     history.forEach((item, index) => {
       prompt += `${index + 1}. ${item.message}\n`;
     });
-
-    prompt += `\n`;
   }
 
-  prompt += `【翻訳対象】\n`;
-  prompt += `${message}\n\n`;
-  prompt += `【指示】\n`;
-  prompt += `- 翻訳結果のみを出力してください（説明や追加情報は不要）\n`;
-  prompt += `- 自然で流暢な${languageNames[targetLanguage]}にしてください\n`;
-
-  if (history && history.length > 0) {
-    prompt += `- 代名詞や省略表現は、上記の文脈を考慮して適切に翻訳してください\n`;
-  }
+  prompt += `\n[Current Text]\n${message}\n\n`;
+  prompt += `[Translation]\n`;
+  prompt += `English:\n`;
+  prompt += `Polish:\n`;
+  prompt += `Japanese:\n`;
 
   return prompt;
 }
