@@ -1,0 +1,18 @@
+# Google Apps Script
+.clasp.json
+
+# Environment variables
+.env
+
+# Node modules (if using clasp)
+node_modules/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
