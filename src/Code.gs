@@ -475,3 +475,12 @@ function clearAllHistory() {
     console.log('clearAllHistoryエラー: ' + error.toString());
   }
 }
+/**
+ * ブラウザアクセス用（デバッグ用）
+ */
+function doGet(e) {
+  console.log("★doGetによる生存確認テスト: 成功"); // ログが出るか確認
+  console.log("現在のデプロイ時刻: " + new Date().toString());
+  
+  return ContentService.createTextOutput("GASは正常に動作しています。ログを確認してください。");
+}
