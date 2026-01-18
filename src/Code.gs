@@ -14,24 +14,31 @@ const MAX_HISTORY_COUNT = 2; // 保存する履歴の最大件数
  */
 function doPost(e) {
   try {
+    Logger.log('doPost started');
     const startTime = new Date().getTime();
 
     // リクエストボディをパース
     const contents = JSON.parse(e.postData.contents);
+    Logger.log('Request contents: ' + JSON.stringify(contents));
     const events = contents.events;
 
     // 署名検証
     if (!verifySignature(e)) {
+      Logger.log('Signature verification failed');
       return ContentService.createTextOutput(JSON.stringify({
         status: 'error',
         message: 'Invalid signature'
       })).setMimeType(ContentService.MimeType.JSON);
     }
+    Logger.log('Signature verification passed');
 
     // イベント処理
     events.forEach(event => {
       if (event.type === 'message' && event.message.type === 'text') {
+        Logger.log('Processing text message event: ' + event.replyToken);
         handleTextMessage(event, startTime);
+      } else {
+        Logger.log('Skipping event type: ' + event.type);
       }
     });
 
@@ -62,6 +69,9 @@ function verifySignature(e) {
     const hash = Utilities.computeHmacSha256Signature(Utilities.newBlob(body).getBytes(), channelSecret);
     const expectedSignature = Utilities.base64Encode(hash);
 
+    Logger.log('Signature: ' + signature);
+    Logger.log('Expected: ' + expectedSignature);
+
     return signature === expectedSignature;
   } catch (error) {
     Logger.log('Error in verifySignature: ' + error.toString());
@@ -77,29 +87,40 @@ function handleTextMessage(event, startTime) {
   const messageText = event.message.text;
   const replyToken = event.replyToken;
 
+  Logger.log('handleTextMessage started for user: ' + userId);
+  Logger.log('Message text: ' + messageText);
+
   try {
     // 1. 履歴取得（超高速: スクリプトプロパティから）
     const historyStartTime = new Date().getTime();
     const userHistory = getUserHistory(userId);
     const historyEndTime = new Date().getTime();
     const historyFetchTime = historyEndTime - historyStartTime;
+    Logger.log('History fetched in ' + historyFetchTime + 'ms. Count: ' + userHistory.length);
 
     // 2. 言語検出
     const detectedLanguage = detectLanguage(messageText);
+    Logger.log('Detected language: ' + detectedLanguage);
 
     // 3. 翻訳実行
     const translationStartTime = new Date().getTime();
+    Logger.log('Starting translation...');
     const translationResult = translateWithContext(messageText, userHistory, detectedLanguage);
     const translationEndTime = new Date().getTime();
     const translationTime = translationEndTime - translationStartTime;
+    Logger.log('Translation completed in ' + translationTime + 'ms');
+    Logger.log('Translation result: ' + translationResult.translation);
 
     // 4. LINEに返信（即座に）
+    Logger.log('Replying to LINE...');
     replyToLine(replyToken, translationResult.translation);
     const replyEndTime = new Date().getTime();
     const totalResponseTime = replyEndTime - startTime;
+    Logger.log('Reply sent. Total response time: ' + totalResponseTime + 'ms');
 
     // 5. 履歴更新（ユーザー発言のみ）
     updateUserHistory(userId, messageText, detectedLanguage);
+    Logger.log('User history updated');
 
     // 6. 非同期でスプレッドシートに保存（応答には影響しない）
     saveToSpreadsheetAsync({
@@ -131,10 +152,13 @@ function getUserHistory(userId) {
     const historyJson = properties.getProperty(historyKey);
 
     if (!historyJson) {
+      Logger.log('No history found for user: ' + userId);
       return [];
     }
 
-    return JSON.parse(historyJson);
+    const history = JSON.parse(historyJson);
+    Logger.log('History found for user ' + userId + ': ' + history.length + ' items');
+    return history;
   } catch (error) {
     Logger.log('Error in getUserHistory: ' + error.toString());
     return [];
@@ -166,6 +190,7 @@ function updateUserHistory(userId, message, language) {
 
     // 保存
     properties.setProperty(historyKey, JSON.stringify(history));
+    Logger.log('History saved for user: ' + userId);
 
   } catch (error) {
     Logger.log('Error in updateUserHistory: ' + error.toString());
@@ -176,6 +201,7 @@ function updateUserHistory(userId, message, language) {
  * 言語検出
  */
 function detectLanguage(text) {
+  Logger.log('Detecting language for text: ' + text.substring(0, 20) + '...');
   // 日本語を含むかチェック
   if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) {
     return 'ja';
@@ -197,9 +223,11 @@ function translateWithContext(message, history, sourceLanguage) {
   try {
     // ターゲット言語を決定
     const targetLanguage = determineTargetLanguage(sourceLanguage);
+    Logger.log('Translation direction: ' + sourceLanguage + ' -> ' + targetLanguage);
 
     // プロンプト作成
     const prompt = buildTranslationPrompt(message, history, sourceLanguage, targetLanguage);
+    Logger.log('Generated prompt: ' + prompt);
 
     // Gemini APIで翻訳
     const translation = callGeminiAPI(prompt);
@@ -273,6 +301,7 @@ function buildTranslationPrompt(message, history, sourceLanguage, targetLanguage
  */
 function callGeminiAPI(prompt) {
   try {
+    Logger.log('Calling Gemini API...');
     const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
     const url = GEMINI_API_URL + '?key=' + apiKey;
 
@@ -297,18 +326,22 @@ function callGeminiAPI(prompt) {
 
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
+    Logger.log('Gemini API Response Code: ' + responseCode);
 
+    const responseContent = response.getContentText();
     if (responseCode !== 200) {
-      throw new Error('Gemini API error: ' + responseCode + ' - ' + response.getContentText());
+      throw new Error('Gemini API error: ' + responseCode + ' - ' + responseContent);
     }
 
-    const result = JSON.parse(response.getContentText());
+    const result = JSON.parse(responseContent);
 
     if (!result.candidates || result.candidates.length === 0) {
+      Logger.log('Gemini API returned no candidates: ' + responseContent);
       throw new Error('No translation result from Gemini API');
     }
 
     const translation = result.candidates[0].content.parts[0].text.trim();
+    Logger.log('Gemini API success');
     return translation;
 
   } catch (error) {
@@ -322,6 +355,7 @@ function callGeminiAPI(prompt) {
  */
 function replyToLine(replyToken, message) {
   try {
+    Logger.log('Sending reply to LINE...');
     const accessToken = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN');
 
     const payload = {
@@ -344,6 +378,7 @@ function replyToLine(replyToken, message) {
 
     const response = UrlFetchApp.fetch(LINE_REPLY_URL, options);
     const responseCode = response.getResponseCode();
+    Logger.log('LINE Reply API Response Code: ' + responseCode);
 
     if (responseCode !== 200) {
       throw new Error('LINE Reply API error: ' + responseCode + ' - ' + response.getContentText());
@@ -360,6 +395,7 @@ function replyToLine(replyToken, message) {
  */
 function saveToSpreadsheetAsync(data) {
   try {
+    Logger.log('Saving to spreadsheet...');
     const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
 
     if (!spreadsheetId) {
@@ -399,6 +435,7 @@ function saveToSpreadsheetAsync(data) {
       data.totalResponseTime,
       data.historyCount
     ]);
+    Logger.log('Saved to spreadsheet successfully');
 
   } catch (error) {
     Logger.log('Error in saveToSpreadsheetAsync: ' + error.toString());
