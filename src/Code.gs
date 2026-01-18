@@ -14,31 +14,31 @@ const MAX_HISTORY_COUNT = 2; // 保存する履歴の最大件数
  */
 function doPost(e) {
   try {
-    Logger.log('doPost 開始');
+    console.log('doPost 開始');
     const startTime = new Date().getTime();
 
     // リクエストボディをパース
     const contents = JSON.parse(e.postData.contents);
-    Logger.log('リクエスト内容: ' + JSON.stringify(contents));
+    console.log('リクエスト内容: ' + JSON.stringify(contents));
     const events = contents.events;
 
     // 署名検証
     if (!verifySignature(e)) {
-      Logger.log('署名検証失敗');
+      console.log('署名検証失敗');
       return ContentService.createTextOutput(JSON.stringify({
         status: 'error',
         message: 'Invalid signature'
       })).setMimeType(ContentService.MimeType.JSON);
     }
-    Logger.log('署名検証成功');
+    console.log('署名検証成功');
 
     // イベント処理
     events.forEach(event => {
       if (event.type === 'message' && event.message.type === 'text') {
-        Logger.log('テキストメッセージイベント処理: ' + event.replyToken);
+        console.log('テキストメッセージイベント処理: ' + event.replyToken);
         handleTextMessage(event, startTime);
       } else {
-        Logger.log('イベントタイプスキップ: ' + event.type);
+        console.log('イベントタイプスキップ: ' + event.type);
       }
     });
 
@@ -47,7 +47,7 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (error) {
-    Logger.log('doPostエラー: ' + error.toString());
+    console.log('doPostエラー: ' + error.toString());
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
       message: error.toString()
@@ -69,12 +69,12 @@ function verifySignature(e) {
     const hash = Utilities.computeHmacSha256Signature(Utilities.newBlob(body).getBytes(), channelSecret);
     const expectedSignature = Utilities.base64Encode(hash);
 
-    Logger.log('受信署名: ' + signature);
-    Logger.log('期待署名: ' + expectedSignature);
+    console.log('受信署名: ' + signature);
+    console.log('期待署名: ' + expectedSignature);
 
     return signature === expectedSignature;
   } catch (error) {
-    Logger.log('verifySignatureエラー: ' + error.toString());
+    console.log('verifySignatureエラー: ' + error.toString());
     return false;
   }
 }
@@ -87,8 +87,8 @@ function handleTextMessage(event, startTime) {
   const messageText = event.message.text;
   const replyToken = event.replyToken;
 
-  Logger.log('handleTextMessage開始 ユーザーID: ' + userId);
-  Logger.log('メッセージ内容: ' + messageText);
+  console.log('handleTextMessage開始 ユーザーID: ' + userId);
+  console.log('メッセージ内容: ' + messageText);
 
   try {
     // 1. 履歴取得（超高速: スクリプトプロパティから）
@@ -96,31 +96,31 @@ function handleTextMessage(event, startTime) {
     const userHistory = getUserHistory(userId);
     const historyEndTime = new Date().getTime();
     const historyFetchTime = historyEndTime - historyStartTime;
-    Logger.log('履歴取得時間: ' + historyFetchTime + 'ms. 件数: ' + userHistory.length);
+    console.log('履歴取得時間: ' + historyFetchTime + 'ms. 件数: ' + userHistory.length);
 
     // 2. 言語検出
     const detectedLanguage = detectLanguage(messageText);
-    Logger.log('検出言語: ' + detectedLanguage);
+    console.log('検出言語: ' + detectedLanguage);
 
     // 3. 翻訳実行
     const translationStartTime = new Date().getTime();
-    Logger.log('翻訳開始...');
+    console.log('翻訳開始...');
     const translationResult = translateWithContext(messageText, userHistory, detectedLanguage);
     const translationEndTime = new Date().getTime();
     const translationTime = translationEndTime - translationStartTime;
-    Logger.log('翻訳完了時間: ' + translationTime + 'ms');
-    Logger.log('翻訳結果: ' + translationResult.translation);
+    console.log('翻訳完了時間: ' + translationTime + 'ms');
+    console.log('翻訳結果: ' + translationResult.translation);
 
     // 4. LINEに返信（即座に）
-    Logger.log('LINE返信中...');
+    console.log('LINE返信中...');
     replyToLine(replyToken, translationResult.translation);
     const replyEndTime = new Date().getTime();
     const totalResponseTime = replyEndTime - startTime;
-    Logger.log('返信完了. 合計応答時間: ' + totalResponseTime + 'ms');
+    console.log('返信完了. 合計応答時間: ' + totalResponseTime + 'ms');
 
     // 5. 履歴更新（ユーザー発言のみ）
     updateUserHistory(userId, messageText, detectedLanguage);
-    Logger.log('ユーザー履歴更新完了');
+    console.log('ユーザー履歴更新完了');
 
     // 6. 非同期でスプレッドシートに保存（応答には影響しない）
     saveToSpreadsheetAsync({
@@ -137,7 +137,7 @@ function handleTextMessage(event, startTime) {
     });
 
   } catch (error) {
-    Logger.log('handleTextMessageエラー: ' + error.toString());
+    console.log('handleTextMessageエラー: ' + error.toString());
     replyToLine(replyToken, '申し訳ございません。翻訳中にエラーが発生しました。');
   }
 }
@@ -152,15 +152,15 @@ function getUserHistory(userId) {
     const historyJson = properties.getProperty(historyKey);
 
     if (!historyJson) {
-      Logger.log('履歴なし ユーザーID: ' + userId);
+      console.log('履歴なし ユーザーID: ' + userId);
       return [];
     }
 
     const history = JSON.parse(historyJson);
-    Logger.log('履歴発見 ユーザーID ' + userId + ': ' + history.length + '件');
+    console.log('履歴発見 ユーザーID ' + userId + ': ' + history.length + '件');
     return history;
   } catch (error) {
-    Logger.log('getUserHistoryエラー: ' + error.toString());
+    console.log('getUserHistoryエラー: ' + error.toString());
     return [];
   }
 }
@@ -190,10 +190,10 @@ function updateUserHistory(userId, message, language) {
 
     // 保存
     properties.setProperty(historyKey, JSON.stringify(history));
-    Logger.log('履歴保存完了 ユーザーID: ' + userId);
+    console.log('履歴保存完了 ユーザーID: ' + userId);
 
   } catch (error) {
-    Logger.log('updateUserHistoryエラー: ' + error.toString());
+    console.log('updateUserHistoryエラー: ' + error.toString());
   }
 }
 
@@ -201,7 +201,7 @@ function updateUserHistory(userId, message, language) {
  * 言語検出
  */
 function detectLanguage(text) {
-  Logger.log('言語検出開始 テキスト: ' + text.substring(0, 20) + '...');
+  console.log('言語検出開始 テキスト: ' + text.substring(0, 20) + '...');
   // 日本語を含むかチェック
   if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) {
     return 'ja';
@@ -223,11 +223,11 @@ function translateWithContext(message, history, sourceLanguage) {
   try {
     // ターゲット言語を決定
     const targetLanguage = determineTargetLanguage(sourceLanguage);
-    Logger.log('翻訳方向: ' + sourceLanguage + ' -> ' + targetLanguage);
+    console.log('翻訳方向: ' + sourceLanguage + ' -> ' + targetLanguage);
 
     // プロンプト作成
     const prompt = buildTranslationPrompt(message, history, sourceLanguage, targetLanguage);
-    Logger.log('生成プロンプト: ' + prompt);
+    console.log('生成プロンプト: ' + prompt);
 
     // Gemini APIで翻訳
     const translation = callGeminiAPI(prompt);
@@ -238,7 +238,7 @@ function translateWithContext(message, history, sourceLanguage) {
     };
 
   } catch (error) {
-    Logger.log('translateWithContextエラー: ' + error.toString());
+    console.log('translateWithContextエラー: ' + error.toString());
     throw error;
   }
 }
@@ -301,7 +301,7 @@ function buildTranslationPrompt(message, history, sourceLanguage, targetLanguage
  */
 function callGeminiAPI(prompt) {
   try {
-    Logger.log('Gemini API呼び出し中...');
+    console.log('Gemini API呼び出し中...');
     const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
     const url = GEMINI_API_URL + '?key=' + apiKey;
 
@@ -326,7 +326,7 @@ function callGeminiAPI(prompt) {
 
     const response = UrlFetchApp.fetch(url, options);
     const responseCode = response.getResponseCode();
-    Logger.log('Gemini APIレスポンスコード: ' + responseCode);
+    console.log('Gemini APIレスポンスコード: ' + responseCode);
 
     const responseContent = response.getContentText();
     if (responseCode !== 200) {
@@ -336,16 +336,16 @@ function callGeminiAPI(prompt) {
     const result = JSON.parse(responseContent);
 
     if (!result.candidates || result.candidates.length === 0) {
-      Logger.log('Gemini API候補なし: ' + responseContent);
+      console.log('Gemini API候補なし: ' + responseContent);
       throw new Error('No translation result from Gemini API');
     }
 
     const translation = result.candidates[0].content.parts[0].text.trim();
-    Logger.log('Gemini API呼び出し成功');
+    console.log('Gemini API呼び出し成功');
     return translation;
 
   } catch (error) {
-    Logger.log('callGeminiAPIエラー: ' + error.toString());
+    console.log('callGeminiAPIエラー: ' + error.toString());
     throw error;
   }
 }
@@ -355,7 +355,7 @@ function callGeminiAPI(prompt) {
  */
 function replyToLine(replyToken, message) {
   try {
-    Logger.log('LINE返信送信中...');
+    console.log('LINE返信送信中...');
     const accessToken = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_ACCESS_TOKEN');
 
     const payload = {
@@ -378,14 +378,14 @@ function replyToLine(replyToken, message) {
 
     const response = UrlFetchApp.fetch(LINE_REPLY_URL, options);
     const responseCode = response.getResponseCode();
-    Logger.log('LINE Reply APIレスポンスコード: ' + responseCode);
+    console.log('LINE Reply APIレスポンスコード: ' + responseCode);
 
     if (responseCode !== 200) {
       throw new Error('LINE Reply API error: ' + responseCode + ' - ' + response.getContentText());
     }
 
   } catch (error) {
-    Logger.log('replyToLineエラー: ' + error.toString());
+    console.log('replyToLineエラー: ' + error.toString());
     throw error;
   }
 }
@@ -395,11 +395,11 @@ function replyToLine(replyToken, message) {
  */
 function saveToSpreadsheetAsync(data) {
   try {
-    Logger.log('スプレッドシート保存中...');
+    console.log('スプレッドシート保存中...');
     const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
 
     if (!spreadsheetId) {
-      Logger.log('SPREADSHEET_ID未設定のため保存をスキップします');
+      console.log('SPREADSHEET_ID未設定のため保存をスキップします');
       return;
     }
 
@@ -435,10 +435,10 @@ function saveToSpreadsheetAsync(data) {
       data.totalResponseTime,
       data.historyCount
     ]);
-    Logger.log('スプレッドシート保存成功');
+    console.log('スプレッドシート保存成功');
 
   } catch (error) {
-    Logger.log('saveToSpreadsheetAsyncエラー: ' + error.toString());
+    console.log('saveToSpreadsheetAsyncエラー: ' + error.toString());
   }
 }
 
@@ -450,9 +450,9 @@ function clearUserHistory(userId) {
     const properties = PropertiesService.getScriptProperties();
     const historyKey = 'HISTORY_' + userId;
     properties.deleteProperty(historyKey);
-    Logger.log('ユーザー履歴クリア: ' + userId);
+    console.log('ユーザー履歴クリア: ' + userId);
   } catch (error) {
-    Logger.log('clearUserHistoryエラー: ' + error.toString());
+    console.log('clearUserHistoryエラー: ' + error.toString());
   }
 }
 
@@ -470,8 +470,8 @@ function clearAllHistory() {
       }
     });
 
-    Logger.log('全ユーザー履歴クリア完了');
+    console.log('全ユーザー履歴クリア完了');
   } catch (error) {
-    Logger.log('clearAllHistoryエラー: ' + error.toString());
+    console.log('clearAllHistoryエラー: ' + error.toString());
   }
 }
