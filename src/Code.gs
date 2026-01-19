@@ -6,8 +6,11 @@
 // 定数
 const LINE_REPLY_URL = 'https://api.line.me/v2/bot/message/reply';
 const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
-// 変更点1: モデルを gemini-3-flash に変更
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+// 【変更1】モデルを gemini-3-flash-preview に変更
+// ※2026年1月時点でのGemini 3 FlashのモデルID
+// const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+
 const MAX_HISTORY_COUNT = 2; // 保存する履歴の最大件数
 
 /**
@@ -178,7 +181,14 @@ function handleTextMessage(event, startTime) {
 
   } catch (error) {
     console.log('handleTextMessageエラー: ' + error.toString());
-    replyToLine(replyToken, '申し訳ございません。翻訳中にエラーが発生しました。');
+
+    let errorMessage = '申し訳ございません。翻訳中にエラーが発生しました。';
+
+    // callGeminiAPIから投げられたレートリミットエラーを検知
+    if (error.message.includes('RATE_LIMIT_EXCEEDED')) {
+      errorMessage = 'AIサービスのレートリミットに到達しました。５分ほど置いて試してください';
+    }
+    replyToLine(replyToken, errorMessage);
   }
 }
 
@@ -335,7 +345,7 @@ function callGeminiAPI(prompt) {
       }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 1000
+        maxOutputTokens: 8192
       }
     };
 
@@ -373,7 +383,13 @@ function callGeminiAPI(prompt) {
 
     const responseContent = response.getContentText();
 
+    // 【追加】リトライ後も429の場合は、判定用の特別なエラーを投げる
+    if (responseCode === 429) {
+      throw new Error('RATE_LIMIT_EXCEEDED');
+    }
+
     if (responseCode !== 200) {
+      debugToSheet('Gemini API error: ' + responseCode + ' - ' + responseContent);
       throw new Error('Gemini API error: ' + responseCode + ' - ' + responseContent);
     }
 
